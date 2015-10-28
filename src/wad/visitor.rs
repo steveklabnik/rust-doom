@@ -8,6 +8,7 @@ use std::cmp::Ordering;
 use tex::TextureDirectory;
 use types::{SectorId, WadSeg, WadCoord, WadSector, WadName, WadThing, ChildId};
 use util::{from_wad_height, from_wad_coords, is_untextured, parse_child_id, is_sky_flat};
+use vec_map::VecMap;
 
 pub trait LevelVisitor {
     fn visit_wall_quad(&mut self,
@@ -62,6 +63,9 @@ pub struct LevelWalker<'a, V: LevelVisitor + 'a> {
     // implicit (intersection of BSP lines) and explicit (seg vertices).
     subsector_points: Vec<Vec2f>,
     subsector_seg_lines: Vec<Line2f>,
+
+    // A cache of computed LightInfo per sector, to avoid recalculating.
+    light_info_cache: VecMap<LightInfo>,
 }
 
 impl<'a, V: LevelVisitor> LevelWalker<'a, V> {
@@ -78,6 +82,7 @@ impl<'a, V: LevelVisitor> LevelWalker<'a, V> {
             bsp_lines: Vec::with_capacity(32),
             subsector_points: Vec::with_capacity(32),
             subsector_seg_lines: Vec::with_capacity(32),
+            light_info_cache: VecMap::with_capacity(level.sectors.len()),
         }
     }
 
@@ -297,7 +302,7 @@ impl<'a, V: LevelVisitor> LevelWalker<'a, V> {
         } else {
             None
         };
-        let light_info = self.light_info(sector, contrast);
+        let light_info = light_info(&mut self.light_info_cache, self.level, sector, contrast);
         let height = (high - low) * 100.0;
         let s1 = seg.offset as f32 + side.x_offset as f32;
         let s2 = s1 + (v2 - v1).norm() * 100.0;
@@ -318,11 +323,11 @@ impl<'a, V: LevelVisitor> LevelWalker<'a, V> {
 
         let (low, high) = (low - POLY_BIAS, high + POLY_BIAS);
         self.visitor.visit_wall_quad(
-            &(v1, v2), (s1, t1), (s2, t2), (low, high), &light_info, scroll, &texture_name);
+            &(v1, v2), (s1, t1), (s2, t2), (low, high), light_info, scroll, &texture_name);
     }
 
     fn flat_poly(&mut self, sector: &WadSector) {
-        let light_info = self.light_info(sector, None);
+        let light_info = light_info(&mut self.light_info_cache, self.level, sector, None);
         let floor_y = from_wad_height(sector.floor_height);
         let floor_tex = &sector.floor_texture;
         let ceil_y = from_wad_height(sector.ceiling_height);
@@ -335,12 +340,12 @@ impl<'a, V: LevelVisitor> LevelWalker<'a, V> {
                                    } else {
                                        ceil_y
                                    }),
-                                  &light_info,
+                                  light_info,
                                   self.subsector_points.clone());
 
         if !is_sky_flat(floor_tex) {
             self.visitor.visit_floor_poly(
-                &self.subsector_points, floor_y, &light_info, floor_tex);
+                &self.subsector_points, floor_y, light_info, floor_tex);
         } else {
             // TODO(cristicbz): investigate if we could store height_range in f32.
             self.visitor.visit_floor_sky_poly(&self.subsector_points,
@@ -349,7 +354,7 @@ impl<'a, V: LevelVisitor> LevelWalker<'a, V> {
 
         if !is_sky_flat(ceil_tex) {
             self.visitor.visit_ceil_poly(
-                &self.subsector_points, ceil_y, &light_info, ceil_tex);
+                &self.subsector_points, ceil_y, light_info, ceil_tex);
         } else {
             self.visitor.visit_ceil_sky_poly(&self.subsector_points,
                                              from_wad_height(self.height_range.high));
@@ -464,14 +469,18 @@ impl<'a, V: LevelVisitor> LevelWalker<'a, V> {
              Vec3f::new(pos[0], (sector.floor_height as f32 + size[1]) / 100.0, pos[1]))
         };
         let half_width = size[0] / 100.0 * 0.5;
-        let light_info = self.light_info(sector, None);
+        let light_info = light_info(&mut self.light_info_cache, self.level, sector, None);
 
-        self.visitor.visit_decor(&low, &high, half_width, &light_info, &name);
+        self.visitor.visit_decor(&low, &high, half_width, light_info, &name);
     }
+}
 
-    fn light_info(&mut self, sector: &WadSector, contrast: Option<Contrast>) -> LightInfo {
-        light::new_light(self.level, sector, contrast)
-    }
+fn light_info<'a>(cache: &'a mut VecMap<LightInfo>,
+                  level: &Level,
+                  sector: &WadSector,
+                  contrast: Option<Contrast>) -> &'a LightInfo {
+    cache.entry(level.sector_id(sector) as usize)
+         .or_insert_with(|| light::new_light(level, sector, contrast))
 }
 
 // Distance on the wrong side of a BSP and seg line allowed.
