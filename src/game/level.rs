@@ -3,14 +3,14 @@ use lights::LightBuffer;
 use math::{Line2f, Vec2f, Vec3f, Vector};
 use num::Zero;
 use std::error::Error;
-use wad::Archive as Archive;
-use wad::Level as WadLevel;
-use wad::{LightInfo, LevelWalker, LevelVisitor};
 use wad::tex::BoundsLookup;
 use wad::tex::{OpaqueImage, TransparentImage};
 use wad::types::{WadName, SectorId};
 use wad::util::{from_wad_coords, is_untextured, is_sky_flat};
 use wad::{WadMetadata, SkyMetadata, TextureDirectory};
+use wad::Archive as Archive;
+use wad::Level as WadLevel;
+use wad::{LightInfo, LevelWalker, LevelVisitor};
 
 pub struct Level {
     start_pos: Vec3f,
