@@ -20,12 +20,16 @@ pub use meta::ThingMetadata;
 pub use name::WadName;
 pub use tex::TextureDirectory;
 pub use error::{Result, Error};
+pub use visitor::{LevelVisitor, LevelWalker};
+pub use light::{LightInfo, LightEffect, LightEffectKind};
 
 mod name;
 mod archive;
 mod level;
 mod image;
 mod error;
+mod visitor;
+mod light;
 pub mod types;
 pub mod util;
 pub mod tex;
